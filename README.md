@@ -28,19 +28,19 @@ Backend em **.NET 10 / ASP.NET Core** para uma plataforma de gerenciamento de pr
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
 - PostgreSQL 14+ local (ou use o docker-compose fornecido)
 
-> Sem acesso root, um PostgreSQL local foi instalado em user-space para desenvolvimento:
-> `export PATH=/tmp/opencode/pg/usr/lib/postgresql/18/bin:$PATH` e
-> `export LD_LIBRARY_PATH=/tmp/opencode/pg/usr/lib/x86_64-linux-gnu` (servidor em `127.0.0.1:5432`, user `devhub`, trust). Ver `docs/development.md`.
+> Sem acesso root, o PostgreSQL 18 do sistema roda com o cluster de dados em user-space
+> (`/tmp/opencode/devhub-pgdata`) em `127.0.0.1:55432`, user `devhub`, trust. Os binários estão em
+> `/usr/lib/postgresql/18/bin`. A string de conexão precisa da porta. Ver `docs/development.md`.
 
 ## Como rodar
 
 ```bash
 # 1. Configurar variáveis (ver .env.example)
 export Jwt__SecretKey="troque-por-um-segredo-de-pelo-menos-32-bytes"
-export ConnectionStrings__Default="Host=localhost;Database=devhub;Username=devhub;Password="
+export ConnectionStrings__Default="Host=127.0.0.1;Port=55432;Database=devhub;Username=devhub;Password="
 
 # 2. Criar o banco (uma vez)
-createdb -h 127.0.0.1 -U devhub devhub     # se não existir
+createdb -h 127.0.0.1 -p 55432 -U devhub devhub     # se não existir
 
 # 3. Aplicar migrações
 dotnet tool restore
