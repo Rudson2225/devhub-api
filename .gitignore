@@ -1,0 +1,30 @@
+# Build output
+bin/
+obj/
+artifacts/
+out/
+*.user
+
+# Rider / Visual Studio
+.idea/
+.vs/
+*.suo
+*.userprefs
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Secrets — never commit real credentials
+.env
+appsettings.Local.json
+*.secret
+
+# Test results
+TestResults/
+*.trx
+coverage/

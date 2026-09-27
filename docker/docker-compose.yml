@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: devhub-postgres
+    environment:
+      POSTGRES_USER: devhub
+      POSTGRES_PASSWORD: devhub_dev_password
+      POSTGRES_DB: devhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - devhub_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devhub -d devhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: devhub-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=devhub;Username=devhub;Password=devhub_dev_password"
+      Jwt__SecretKey: "${Jwt__SecretKey:-dev-only-secret-change-me-0123456789}"
+      Database__AutoMigrate: "true"
+      Seed__CreateAdminUser: "true"
+      Seed__AdminEmail: "admin@devhub.local"
+      Seed__AdminPassword: "${Seed__AdminPassword:-ChangeMe123!}"
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  devhub_pgdata:

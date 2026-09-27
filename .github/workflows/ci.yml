@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  DOTNET_VERSION: "10.0.x"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: devhub
+          POSTGRES_PASSWORD: devhub_test_password
+          POSTGRES_DB: devhub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devhub -d devhub_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore DevHub.slnx
+
+      - name: Build
+        run: dotnet build DevHub.slnx -c Release --no-restore
+
+      - name: Run tests (incl. integration against PostgreSQL)
+        env:
+          ConnectionStrings__Default: "Host=127.0.0.1;Port=5432;Database=devhub_test;Username=devhub;Password=devhub_test_password"
+          Jwt__SecretKey: "ci-only-test-secret-key-0123456789abcdef"
+        run: dotnet test DevHub.slnx -c Release --no-build
+
+      - name: Format check
+        run: dotnet format DevHub.slnx --verify-no-changes --no-restore
