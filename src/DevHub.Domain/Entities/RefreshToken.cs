@@ -30,6 +30,13 @@ public sealed class RefreshToken
 
     public string? RevokedByIp { get; set; }
 
+    /// <summary>
+    /// Why the token was revoked, when the revocation was not a plain end to a session: reuse of an
+    /// already rotated token, a password change, and so on. Kept apart from <see cref="RevokedByIp"/>
+    /// because a bulk revocation has no address behind it - there is a reason, not a caller.
+    /// </summary>
+    public string? RevokedReason { get; set; }
+
     public RefreshToken()
     {
         CreatedAt = DateTime.UtcNow;

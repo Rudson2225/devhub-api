@@ -355,6 +355,10 @@ namespace DevHub.Infrastructure.Migrations
                         .HasMaxLength(45)
                         .HasColumnType("character varying(45)");
 
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -368,7 +372,8 @@ namespace DevHub.Infrastructure.Migrations
                     b.HasIndex("TokenHash")
                         .IsUnique();
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "RevokedAt")
+                        .HasDatabaseName("ix_refresh_tokens_user_revoked");
 
                     b.ToTable("refresh_tokens", (string)null);
                 });

@@ -52,7 +52,7 @@ public sealed class RefreshTokenRepository : IRefreshTokenRepository
             .Where(t => t.UserId == userId && t.RevokedAt == null)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(t => t.RevokedAt, now)
-                .SetProperty(t => t.RevokedByIp, revokeReason),
+                .SetProperty(t => t.RevokedReason, revokeReason),
                 cancellationToken);
     }
 }

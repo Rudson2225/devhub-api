@@ -242,4 +242,50 @@ public sealed class RefreshTokenSecurityTests : IClassFixture<DevHubApiFactory>
         logout.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await LoadTokenAsync(user.RefreshToken)).RevokedAt.Should().BeNull();
     }
+
+    [Fact]
+    public async Task Reuse_detection_records_the_reason_outside_the_address_column()
+    {
+        var victim = await _factory.RegisterAsync($"rt-reason-{Guid.NewGuid():N}@test.com");
+
+        (await RefreshAsync(victim.RefreshToken)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await RefreshAsync(victim.RefreshToken)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var all = await LoadAllTokensForUserAsync(victim.User.Id);
+        all.Should().NotBeEmpty();
+        all.Should().OnlyContain(t => t.RevokedAt != null);
+
+        // A bulk revocation has no caller address, so the reason has to land in its own column rather
+        // than being smuggled into RevokedByIp, which is sized for an address.
+        all.Should().Contain(t => t.RevokedReason == "refresh token reuse detected");
+        all.Should().NotContain(t => t.RevokedByIp == "refresh token reuse detected");
+
+        // Every value left in the address column really is an address.
+        foreach (var token in all.Where(t => t.RevokedByIp is not null))
+        {
+            System.Net.IPAddress.TryParse(token.RevokedByIp, out _).Should().BeTrue(
+                $"RevokedByIp is an address column but held '{token.RevokedByIp}'");
+        }
+    }
+
+    [Fact]
+    public async Task Changing_the_password_records_the_reason_and_leaves_no_address()
+    {
+        var user = await _factory.RegisterAsync($"rt-passwd-{Guid.NewGuid():N}@test.com");
+
+        var response = await _factory.HttpClient.SendAsync(_factory.Authenticated(
+            new HttpRequestMessage(HttpMethod.Post, "/api/users/me/change-password")
+            {
+                Content = JsonContent.Create(new { currentPassword = "Str0ng!Pass123", newPassword = "An0ther!Pass123" })
+            }, user.AccessToken));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var token = await LoadTokenAsync(user.RefreshToken);
+        token.RevokedAt.Should().NotBeNull();
+        token.RevokedReason.Should().Be("password changed");
+        token.RevokedByIp.Should().BeNull();
+
+        (await RefreshAsync(user.RefreshToken)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }

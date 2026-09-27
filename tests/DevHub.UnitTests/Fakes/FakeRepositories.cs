@@ -60,7 +60,7 @@ public sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
         foreach (var token in Tokens.Where(t => t.UserId == userId && t.RevokedAt is null))
         {
             token.RevokedAt = now;
-            token.RevokedByIp = revokeReason;
+            token.RevokedReason = revokeReason;
         }
 
         return Task.CompletedTask;

@@ -225,6 +225,69 @@ public sealed class AuthServiceTests
         await act.Should().ThrowAsync<UnauthorizedException>();
     }
 
+    [Fact]
+    public async Task Change_password_records_the_reason_and_never_writes_it_as_an_address()
+    {
+        await _service.RegisterAsync(
+            new RegisterRequest("dev@example.com", "Str0ng!Pass123", "Dev"),
+            "10.0.0.1");
+        var userId = _users.Users.Single().Id;
+
+        await _service.ChangePasswordAsync(
+            userId,
+            new ChangePasswordRequest("Str0ng!Pass123", "NewStr0ng!Pass123"));
+
+        var token = _tokens.Tokens.Single();
+        token.RevokedAt.Should().NotBeNull();
+        token.RevokedReason.Should().Be("password changed");
+        token.RevokedByIp.Should().BeNull("a bulk revocation has a reason, not a caller address");
+    }
+
+    [Fact]
+    public async Task Reuse_detection_revokes_every_session_with_the_reason_recorded()
+    {
+        var register = await _service.RegisterAsync(
+            new RegisterRequest("dev@example.com", "Str0ng!Pass123", "Dev"),
+            null);
+
+        // A second, independent session for the same account.
+        await _service.LoginAsync(new LoginRequest("dev@example.com", "Str0ng!Pass123"), "10.0.0.2");
+        _tokens.Tokens.Should().HaveCount(2);
+
+        var rotated = await _service.RefreshAsync(new RefreshTokenRequest(register.RefreshToken), "10.0.0.3");
+        _tokens.Tokens.Should().HaveCount(3);
+
+        var act = () => _service.RefreshAsync(new RefreshTokenRequest(register.RefreshToken), "10.0.0.4");
+        await act.Should().ThrowAsync<UnauthorizedException>();
+
+        // Everything is revoked: the two sessions that were still live carry the reason, and the token
+        // that had already been rotated keeps the address that performed the rotation.
+        _tokens.Tokens.Should().OnlyContain(t => t.RevokedAt != null);
+        _tokens.Tokens.Count(t => t.RevokedReason == "refresh token reuse detected").Should().Be(2);
+        _tokens.Tokens.Should().NotContain(t => t.RevokedByIp == "refresh token reuse detected",
+            "the reason belongs in RevokedReason, not in the address column");
+
+        // The other session was killed too, which is the whole point of treating the account as compromised.
+        var otherSession = () => _service.RefreshAsync(new RefreshTokenRequest(rotated.RefreshToken), "10.0.0.4");
+        await otherSession.Should().ThrowAsync<UnauthorizedException>();
+    }
+
+    [Fact]
+    public async Task Rotating_a_token_records_the_rotating_address_separately_from_the_reason()
+    {
+        var register = await _service.RegisterAsync(
+            new RegisterRequest("dev@example.com", "Str0ng!Pass123", "Dev"),
+            "10.0.0.1");
+        var oldHash = RefreshTokenGeneratorHash(register.RefreshToken);
+
+        await _service.RefreshAsync(new RefreshTokenRequest(register.RefreshToken), "10.0.0.2");
+
+        var old = _tokens.Tokens.Single(t => t.TokenHash == oldHash);
+        old.RevokedByIp.Should().Be("10.0.0.2");
+        old.RevokedReason.Should().BeNull("a plain rotation is not a revocation reason");
+        old.CreatedAt.Should().BeBefore(old.ExpiresAt);
+    }
+
     private static string RefreshTokenGeneratorHash(string plain)
         => new RefreshTokenGenerator().Hash(plain);
 }
