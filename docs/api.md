@@ -2,40 +2,64 @@
 
 Base URL: `http://localhost:5XXX/api` (Swagger em `/swagger`).
 
-Todos os endpoints (exceto `/api/auth/*`) exigem `Authorization: Bearer <accessToken>`.
+Todos os endpoints exigem `Authorization: Bearer <accessToken>`, exceto
+`POST /api/auth/register`, `POST /api/auth/login` e `POST /api/auth/refresh`.
+Entre os endpoints de `/api/auth/*`, só o `logout` exige token.
 
 Formato de erro: [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `ProblemDetails`
-com `errorCode` (e `errors` para validação):
+com `errorCode`, `traceId` e `errors` para validação de domínio:
 
 ```json
 {
-  "title": "Field validation failed.",
+  "title": "One or more validation errors occurred.",
   "status": 422,
-  "errorCode": "validation_error",
+  "errorCode": "validation_failed",
+  "traceId": "0HN7...",
   "errors": { "email": ["'Email' não pode ser vazio."] }
 }
 ```
 
-Códigos comuns: `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409),
-`validation_error` (422), `internal_error` (500), `concurrency_conflict` (409),
-`duplicate_key` (409 — violação de unicidade no Postgres).
+Códigos comuns: `unauthorized` (401), `forbidden` (403), `not_found` (404), `bad_request` (400),
+`conflict` (409), `validation_failed` (422), `internal_error` (500), `concurrency_conflict` (409),
+`duplicate_key` (409 — violação de unicidade no Postgres), `foreign_key_violation` (409).
+
+`403` significa que o recurso existe e o chamador autenticado não tem a permissão necessária;
+`404` significa que o recurso não existe. Ou seja, um `GET` em um projeto de que o chamador não é
+membro responde `403`, e é essa resposta que confirma a existência do projeto. Ver a justificativa
+em `docs/architecture.md`.
+
+Erros de **model binding** (JSON malformado, tipo inválido) não passam pelo handler de
+exceções: saem como `400` do MVC, com o formato padrão de `ValidationProblemDetails` e sem
+`errorCode`. Nenhum SQL, schema, connection string ou stack trace chega ao cliente.
 
 ## Autenticação
 
-### POST `/api/auth/register` — público, rate limit 10/min
+`register`, `login` e `refresh` são públicos e sujeitos a **dois** limites independentes, ambos
+em janela fixa de 60 s e ambos configuráveis em `RateLimit:AuthPolicy`:
+
+| Orçamento | Padrão | Chave |
+|---|---|---|
+| Por endereço de cliente | 10 req/min (`PermitLimit`) | IP |
+| Por conta submetida | 20 req/min (`AccountPermitLimit`) | e-mail do corpo da requisição |
+
+O limite por conta é o que impede *account spraying* de prosseguir ao trocar de IP; o por
+endereço protege o servidor de abuso. Exceder qualquer um dos dois devolve `429`.
+
+### POST `/api/auth/register` — público
 ```json
 { "email": "dev@example.com", "password": "Str0ng!Pass123", "displayName": "Dev" }
 ```
 → `201` com `{ accessToken, refreshToken, expiresIn, tokenType: "Bearer", user }`
+- `Location` aponta para `/api/users/me`, que devolve o perfil criado num `GET`.
 - `409` se o email já existe.
 
-### POST `/api/auth/login`
+### POST `/api/auth/login` — público
 ```json
 { "email": "dev@example.com", "password": "Str0ng!Pass123" }
 ```
 → `200` com o mesmo payload de `register`. `401` para credenciais inválidas.
 
-### POST `/api/auth/refresh`
+### POST `/api/auth/refresh` — público
 ```json
 { "refreshToken": "<replace>" }
 ```
@@ -92,6 +116,10 @@ O `GET` devolve a lista completa (nome, papel, data de entrada) para qualquer me
 Status: `Backlog, Todo, InProgress, Review, Done`. Prioridade: `Low, Medium, High, Critical`.
 Concluir uma tarefa (status `Done`) grava `completedAt` e registra atividade `TaskCompleted`.
 
+`GET /board` devolve no máximo **100 tarefas por coluna** para não carregar o quadro inteiro.
+O corte é silencioso: quando um status tem mais de 100 tarefas, a resposta traz as 100 primeiras
+e nada sinaliza que há mais. Clientes que precisam do total devem usar a listagem paginada.
+
 ## Comentários
 
 | Método | Rota | Permissão |
@@ -112,6 +140,10 @@ Concluir uma tarefa (status `Done`) grava `completedAt` e registra atividade `Ta
 
 Tags globais (ex.: `bug`, `feature`) nascem no seed; tags criadas pela API são escopo do projeto.
 
+Uma tag escopada a outro projeto não pode ser aplicada a uma tarefa: o `PATCH` de tarefa
+responde `404`, o mesmo que daria para um id inexistente. Tags globais podem ser usadas em
+qualquer projeto, sendo então associadas a ele na primeira vez que são usadas.
+
 ## Documentos
 
 | Método | Rota | Permissão |
@@ -128,6 +160,9 @@ Tipos (`DocumentType`): `Other, Readme, Api, Architecture, Setup, Database, Depl
 
 - `GET /api/projects/{projectId}/activities?page&pageSize` (`ActivitiesRead`) — trilha do projeto (paginada, mais recentes primeiro).
 - `GET /api/projects/{projectId}/dashboard` (`DashboardRead`) — `{ projectId, totalTasks, completedTasks, pendingTasks, criticalTasks, tasksByStatus[], tasksByPriority[], totalMembers, recentActivities[] }`.
+- `tasksByStatus` e `tasksByPriority` só incluem os valores que têm tarefas: um status sem
+  tarefas não aparece no array, e não vem com `count: 0`. Quem quiser os cinco status
+  fixos precisa completá-los no cliente.
 
 ## Notificações
 
@@ -145,4 +180,10 @@ Tipos: `TaskAssigned, TaskStatusChanged, TaskComment, MemberAdded, RoleChanged`.
 
 ## Rate limiting
 
-`/api/auth/register|login|refresh` → 10 requisições/minuto por IP → `429 Too Many Requests` (ajustável via `RateLimit:AuthPolicy:PermitLimit`, com padrão `10`).
+`/api/auth/register|login|refresh` são limitados por dois orçamentos independentes
+(`RateLimit:AuthPolicy`): **10 req/min por IP** (`PermitLimit`) e **20 req/min por conta
+submetida** (`AccountPermitLimit`), ambos em janela fixa de 60 s (`WindowSeconds`).
+Exceder qualquer um dos dois → `429 Too Many Requests`.
+
+O limite por conta conta o e-mail do corpo da requisição, não o do token, porque é justamente
+o que limita adivinhação de senha e *spraying* quando o atacante varia o IP de origem.

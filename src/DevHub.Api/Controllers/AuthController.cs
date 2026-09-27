@@ -38,7 +38,11 @@ public sealed class AuthController : ApiControllerBase
         _logger.LogInformation("Registration attempt from {Ip}", ip);
 
         var response = await _authService.RegisterAsync(request, ip, cancellationToken);
-        return CreatedAtAction(nameof(Register), new { }, response);
+
+        // Location has to name a resource the caller can actually retrieve. This action is POST-only,
+        // so pointing at it produced a header that answered 405 to any client following it; the
+        // canonical URI of the user that was just created is its own profile.
+        return CreatedAtAction(nameof(UsersController.Me), "Users", new { }, response);
     }
 
     [HttpPost("login")]

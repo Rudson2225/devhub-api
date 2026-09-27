@@ -63,7 +63,19 @@ dotnet tool run dotnet-ef database update \
 
 > O startup da API exige `Jwt__SecretKey`; ao executar comandos do EF a partir desta máquina,
 > exporte um valor de desenvolvimento primeiro (ex.: `export Jwt__SecretKey="dev~key~32bytes~min"`).
-> O EF usa a mesma `ConnectionStrings__Default` da API — veja a seção do PostgreSQL para a porta.
+>
+> O EF **não** usa a `ConnectionStrings__Default` da API: em tempo de design ele passa por
+> `DesignTimeDbContextFactory`, que lê `DEVHUB_CONNECTIONSTRING` ou, separadamente,
+> `DEVHUB_DB_HOST` / `DEVHUB_DB_PORT` / `DEVHUB_DB_NAME` / `DEVHUB_DB_USER` / `DEVHUB_DB_PASSWORD`.
+> Só exportar `ConnectionStrings__Default` faz o EF apontar para a porta 5432 e falhar:
+>
+> ```bash
+> export DEVHUB_DB_HOST=127.0.0.1
+> export DEVHUB_DB_PORT=55432
+> export DEVHUB_DB_NAME=devhub
+> # ou, para um servidor só:
+> export DEVHUB_CONNECTIONSTRING="Host=127.0.0.1;Port=55432;Database=devhub;Username=devhub;Password="
+> ```
 >
 > Sem `--configuration Release` o EF carrega a saída **Debug**, e com `--no-build` ele nem recompila:
 > as duas opções juntas podem validar contra um assembly antigo e dar um resultado falso (uma migração
@@ -77,7 +89,7 @@ As migrações são aplicadas automaticamente no startup quando `Database__AutoM
 
 ```bash
 export Jwt__SecretKey="dev-only-secret-com-pelo-menos-32-bytes"
-export ConnectionStrings__Default="Host=127.0.0.1;Database=devhub;Username=devhub;Password="
+export ConnectionStrings__Default="Host=127.0.0.1;Port=55432;Database=devhub;Username=devhub;Password="
 export ASPNETCORE_ENVIRONMENT=Development
 dotnet run --project src/DevHub.Api
 ```

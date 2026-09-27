@@ -221,6 +221,58 @@ public sealed class TagScopeUniquenessTests : IClassFixture<DevHubApiFactory>
         stored.Color.Should().Be("#222222");
     }
 
+    [Fact]
+    public async Task Updating_a_tag_that_belongs_to_another_project_is_a_404_not_a_400()
+    {
+        var owner = await _factory.RegisterAsync($"tag-scope-foreign-{Guid.NewGuid():N}@test.com");
+        var mine = await _factory.CreateProjectAsync(owner.AccessToken, "Project that owns the tag");
+        var theirs = await _factory.CreateProjectAsync(owner.AccessToken, "Project that must stay out");
+
+        var tagId = await TagIdAsync(await CreateTagAsync(owner.AccessToken, mine.Id, "owned-elsewhere"));
+
+        var response = await _factory.HttpClient.SendAsync(_factory.Authenticated(
+            new HttpRequestMessage(HttpMethod.Patch, $"/api/projects/{theirs.Id}/tags/{tagId}")
+            {
+                Content = JsonContent.Create(new { name = "renamed-by-a-stranger" })
+            }, owner.AccessToken));
+
+        // The caller may manage tags in the second project only. The tag lives in the first, so the
+        // answer must be the same one an id that does not exist gets - 404 - and must not explain
+        // itself with "this tag is a global tag", which is a different situation entirely.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("global tag");
+        body.Should().NotContain("renamed-by-a-stranger");
+
+        (await LoadTagAsync(tagId)).Name.Should().Be("owned-elsewhere", "the tag was not renamed");
+    }
+
+    [Fact]
+    public async Task Updating_a_global_tag_through_a_project_stays_a_400_and_says_why()
+    {
+        var globalName = $"shared-rename-{Guid.NewGuid():N}";
+        var globalId = await InsertGlobalTagAsync(globalName, "#111111", "original global description");
+
+        var actor = await _factory.RegisterAsync($"tag-rename-global-{Guid.NewGuid():N}@test.com");
+        var project = await _factory.CreateProjectAsync(actor.AccessToken, "Project holding the global tag");
+
+        // Associating it to the project is allowed and is what the taxonomy is for.
+        var attach = await CreateTagAsync(actor.AccessToken, project.Id, globalName);
+        (await TagIdAsync(attach)).Should().Be(globalId);
+
+        // Renaming it through the project is not: the row is shared with every other project, so the
+        // request is refused as a bad request - not as a missing tag - and the reason is spelled out.
+        var response = await _factory.HttpClient.SendAsync(_factory.Authenticated(
+            new HttpRequestMessage(HttpMethod.Patch, $"/api/projects/{project.Id}/tags/{globalId}")
+            {
+                Content = JsonContent.Create(new { name = "renamed-through-a-project" })
+            }, actor.AccessToken));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("global tag");
+        (await LoadTagAsync(globalId)).Name.Should().Be(globalName, "the shared row is untouched");
+    }
+
     private async Task<Guid> InsertGlobalTagAsync(string name, string color = "#6b7280", string? description = null)
     {
         using var scope = _factory.Services.CreateScope();

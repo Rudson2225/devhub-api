@@ -10,6 +10,7 @@ public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<App
     {
         var connectionString = Environment.GetEnvironmentVariable("DEVHUB_CONNECTIONSTRING")
             ?? $"Host={Environment.GetEnvironmentVariable("DEVHUB_DB_HOST") ?? "localhost"};" +
+               $"Port={Environment.GetEnvironmentVariable("DEVHUB_DB_PORT") ?? "5432"};" +
                $"Database={Environment.GetEnvironmentVariable("DEVHUB_DB_NAME") ?? "devhub"};" +
                $"Username={Environment.GetEnvironmentVariable("DEVHUB_DB_USER") ?? "devhub"};" +
                $"Password={Environment.GetEnvironmentVariable("DEVHUB_DB_PASSWORD") ?? string.Empty}";

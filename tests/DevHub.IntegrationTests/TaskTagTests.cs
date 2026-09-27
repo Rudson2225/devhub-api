@@ -132,6 +132,36 @@ public sealed class TaskTagTests : IClassFixture<DevHubApiFactory>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task A_tag_owned_by_another_project_cannot_be_put_on_the_task()
+    {
+        var owner = await _factory.RegisterAsync("task-tag-foreign@test.com");
+        var mine = await _factory.CreateProjectAsync(owner.AccessToken, "Project that owns the tag");
+        var theirs = await _factory.CreateProjectAsync(owner.AccessToken, "Project that must stay out");
+
+        var foreign = await CreateTagAsync(owner.AccessToken, mine.Id, "belongs-to-mine", "#00ff00");
+        var task = await _factory.CreateTaskAsync(owner.AccessToken, theirs.Id, "Task in the other project");
+
+        // The caller may update tasks in the second project, but that permission says nothing about
+        // the labels owned by the first one, so the request is refused the same way an unknown id is:
+        // the tag is not something this project may use.
+        var response = await PatchTaskAsync(owner.AccessToken, task.Id, new { tagIds = new[] { foreign.Id } });
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain(foreign.Name,
+            "the refusal must not confirm that the tag exists in another project");
+
+        var reread = await _factory.HttpClient.SendAsync(
+            _factory.Authenticated(new HttpRequestMessage(HttpMethod.Get, $"/api/tasks/{task.Id}"), owner.AccessToken));
+        (await reread.Content.ReadFromJsonAsync<TaskResponse>(DevHubApiFactory.ApiJsonOptions))!
+            .Tags.Should().BeEmpty("the refused request must not have attached anything");
+
+        // And the other project's tag palette was not extended with it either.
+        var tags = await _factory.HttpClient.SendAsync(
+            _factory.Authenticated(new HttpRequestMessage(HttpMethod.Get, $"/api/projects/{theirs.Id}/tags"), owner.AccessToken));
+        var palette = (await tags.Content.ReadFromJsonAsync<IReadOnlyList<TagResponse>>(DevHubApiFactory.ApiJsonOptions))!;
+        palette.Should().NotContain(t => t.Id == foreign.Id);
+    }
+
     private Task<HttpResponseMessage> PatchTaskAsync(string accessToken, Guid taskId, object body)
         => _factory.HttpClient.SendAsync(
             _factory.Authenticated(

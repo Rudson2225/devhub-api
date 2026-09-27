@@ -28,3 +28,8 @@ appsettings.Local.json
 TestResults/
 *.trx
 coverage/
+
+# Local installers — downloaded to set up PostgreSQL, never part of the project
+*.deb
+*.rpm
+*.msi

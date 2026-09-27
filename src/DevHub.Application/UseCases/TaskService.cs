@@ -351,8 +351,20 @@ public sealed class TaskService : ITaskService
         var tags = new List<Tag>(desired.Length);
         foreach (var tagId in desired)
         {
-            tags.Add(await _tags.GetByIdAsync(tagId, cancellationToken)
-                ?? throw new NotFoundException($"Tag '{tagId}' not found."));
+            var tag = await _tags.GetByIdAsync(tagId, cancellationToken)
+                ?? throw new NotFoundException($"Tag '{tagId}' not found.");
+
+            // A tag owned by another project is not a label this task may carry. The permission that
+            // got the caller here is scoped to task.ProjectId, so accepting a foreign tag would let a
+            // member of one project pull a label out of another one - and the linking step below
+            // would even attach it to this project. A global tag has no ProjectId and is usable
+            // everywhere, so only a scoped tag from another project is refused here.
+            if (tag.ProjectId is not null && tag.ProjectId != task.ProjectId)
+            {
+                throw new NotFoundException($"Tag '{tagId}' not found.");
+            }
+
+            tags.Add(tag);
         }
 
         var current = task.Tags.ToList();

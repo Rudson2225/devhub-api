@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using DevHub.Application.DTOs.Auth;
 using DevHub.Application.DTOs.Projects;
+using DevHub.Application.DTOs.Users;
 using FluentAssertions;
 
 namespace DevHub.IntegrationTests;
@@ -55,6 +57,29 @@ public sealed class ProjectsEndpointsTests : IClassFixture<DevHubApiFactory>
         followed.StatusCode.Should().Be(HttpStatusCode.OK);
         (await followed.Content.ReadFromJsonAsync<ProjectResponse>(DevHubApiFactory.ApiJsonOptions))!
             .Id.Should().Be(created.Id);
+    }
+
+    [Fact]
+    public async Task Register_points_at_a_location_that_can_actually_be_fetched()
+    {
+        var response = await _factory.HttpClient.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/api/auth/register")
+        {
+            Content = JsonContent.Create(new { email = "register-location@test.com", password = "Str0ng!Pass123", displayName = "Location" })
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var location = response.Headers.Location;
+        location.Should().NotBeNull("a 201 has to say where the created account lives");
+
+        // Location used to name this very POST route, which answers 405 to a GET - so any client that
+        // followed the header broke. It must name the profile the caller can read back with a GET.
+        location!.AbsolutePath.Should().NotBe("/api/auth/register");
+        var followed = await _factory.HttpClient.SendAsync(
+            _factory.Authenticated(new HttpRequestMessage(HttpMethod.Get, location), (await response.Content.ReadFromJsonAsync<AuthResponse>(DevHubApiFactory.ApiJsonOptions))!.AccessToken));
+
+        followed.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await followed.Content.ReadFromJsonAsync<UserResponse>(DevHubApiFactory.ApiJsonOptions))!
+            .Email.Should().Be("register-location@test.com");
     }
 
     [Fact]

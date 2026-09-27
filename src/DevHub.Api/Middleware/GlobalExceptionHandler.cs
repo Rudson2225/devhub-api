@@ -24,6 +24,21 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
+        // The caller hung up. There is nobody left to answer and nothing wrong on our side, so the
+        // abort is left to propagate: turning it into a 500 would fill the error log with entries for
+        // requests that were cancelled on purpose, and the write below would race the dead connection.
+        if (exception is OperationCanceledException && httpContext.RequestAborted.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        // A response that already has bytes on the wire cannot be replaced by a problem document;
+        // letting the exception continue is the only honest option.
+        if (httpContext.Response.HasStarted)
+        {
+            return false;
+        }
+
         var (status, title, errorCode, errors) = MapException(exception);
 
         if (status >= HttpStatusCode.InternalServerError)

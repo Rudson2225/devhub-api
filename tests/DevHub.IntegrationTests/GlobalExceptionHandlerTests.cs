@@ -4,6 +4,7 @@ using System.Text.Json;
 using DevHub.Api.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -165,5 +166,96 @@ public sealed class GlobalExceptionHandlerTests
         doc.RootElement.TryGetProperty("title", out _).Should().BeTrue();
         doc.RootElement.TryGetProperty("status", out _).Should().BeTrue();
         doc.RootElement.TryGetProperty("errorCode", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_cancelled_request_is_not_answered_and_not_reported_as_a_server_error()
+    {
+        using var aborted = new CancellationTokenSource();
+        await aborted.CancelAsync();
+
+        var context = new DefaultHttpContext { RequestAborted = aborted.Token };
+        context.Request.Method = "GET";
+        context.Request.Path = "/api/projects";
+        context.Response.Body = new MemoryStream();
+
+        var handler = new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance);
+        var handled = await handler.TryHandleAsync(
+            context,
+            new OperationCanceledException("The request was aborted.", aborted.Token),
+            CancellationToken.None);
+
+        // Nobody is listening any more, so there is no status to invent and nothing to log: the
+        // abort propagates instead of turning into a 500 on a connection that is already gone.
+        handled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(200, "no response may be written for an aborted request");
+        context.Response.Body.Length.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_cancellation_that_is_not_a_client_abort_is_still_a_500()
+    {
+        // A timeout inside the server has nobody to blame on the connection, and the caller is still
+        // there waiting: that one keeps the generic 500 rather than being passed off as an abort.
+        var context = new DefaultHttpContext();
+        context.Request.Method = "GET";
+        context.Request.Path = "/api/projects";
+        context.Response.Body = new MemoryStream();
+
+        var handler = new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance);
+        var handled = await handler.TryHandleAsync(
+            context,
+            new OperationCanceledException("An internal timeout elapsed."),
+            CancellationToken.None);
+
+        handled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(500);
+    }
+
+    [Fact]
+    public async Task A_response_already_on_the_wire_is_left_alone()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "GET";
+        context.Request.Path = "/api/projects";
+        context.Response.Body = new MemoryStream();
+        context.Response.StatusCode = 200;
+        await context.Response.WriteAsync("{\"partial\":");
+
+        // DefaultHttpContext reports HasStarted as false whatever was written to the body stream, so
+        // the feature is replaced by one that reports the state the pipeline would really be in.
+        var started = new StartedResponseFeature(context.Response.Body) { StatusCode = 200 };
+        context.Features.Set<IHttpResponseFeature>(started);
+
+        var handler = new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance);
+        var handled = await handler.TryHandleAsync(
+            context,
+            new InvalidOperationException("thrown after the response started"),
+            CancellationToken.None);
+
+        handled.Should().BeFalse("a problem document cannot replace bytes that were already sent");
+        context.Response.StatusCode.Should().Be(200);
+    }
+
+    /// <summary>Response feature pinned to "already started", standing in for an open response.</summary>
+    private sealed class StartedResponseFeature(Stream body) : IHttpResponseFeature
+    {
+        public int StatusCode { get; set; }
+
+        public string? ReasonPhrase { get; set; }
+
+        public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
+
+        public Stream Body { get; set; } = body;
+
+        public bool HasStarted => true;
+
+        public void OnStarting(Func<object, Task> callback, object state)
+        {
+        }
+
+        public void OnCompleted(Func<object, Task> callback, object state)
+        {
+        }
     }
 }

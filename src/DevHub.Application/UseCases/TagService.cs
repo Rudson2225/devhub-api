@@ -108,9 +108,19 @@ public sealed class TagService : ITagService
         var tag = await _tags.GetByIdAsync(tagId, cancellationToken)
             ?? throw new NotFoundException("Tag not found.");
 
-        if (tag.ProjectId is null || tag.ProjectId != projectId)
+        if (tag.ProjectId is null)
         {
+            // A global tag is shared by every project, so renaming it here would change it for all of
+            // them. It exists and is reachable, which is why this is a refusal rather than a 404.
             throw new BadRequestException("Only project-scoped tags can be updated. This tag is a global tag.");
+        }
+
+        if (tag.ProjectId != projectId)
+        {
+            // Same reasoning as DeleteAsync: the tag is not part of this project, so the answer must
+            // not confirm that it exists somewhere else, and it must not say "global tag" either -
+            // that would be a different situation entirely.
+            throw new NotFoundException("Tag not found.");
         }
 
         if (request.Name is not null)
