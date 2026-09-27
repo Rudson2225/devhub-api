@@ -95,6 +95,10 @@ public sealed class TaskService : ITaskService
         var groups = new Dictionary<ProjectTaskStatus, List<TaskResponse>>();
         foreach (var (_, status) in StatusColumns)
         {
+            // One capped query per column rather than a single unbounded read of the project. The
+            // board therefore shows at most MaxPageSize tasks per column and the response carries no
+            // total, so a column with more tasks than that is silently truncated: the list endpoint
+            // is the way to page past it.
             var tasks = await _tasks.ListAsync(projectId, new TaskListQuery(null, status, null, null, null, null, null, 1, PaginationQuery.MaxPageSize), cancellationToken);
             groups[status] = await MapTaskResponsesAsync(tasks, cancellationToken);
         }
