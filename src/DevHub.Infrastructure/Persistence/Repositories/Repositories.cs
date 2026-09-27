@@ -42,9 +42,6 @@ public sealed class RefreshTokenRepository : IRefreshTokenRepository
     public async Task AddAsync(RefreshToken token, CancellationToken cancellationToken = default)
         => await _context.RefreshTokens.AddAsync(token, cancellationToken);
 
-    public void Update(RefreshToken token)
-        => _context.RefreshTokens.Update(token);
-
     public async Task RevokeAllForUserAsync(Guid userId, string revokeReason, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
@@ -71,9 +68,6 @@ public sealed class RoleRepository : IRoleRepository
 
     public Task<Role?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => _context.Roles.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
-
-    public async Task<IReadOnlyList<Role>> ListAsync(CancellationToken cancellationToken = default)
-        => await _context.Roles.AsNoTracking().ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<Role>> ListWithPermissionsAsync(CancellationToken cancellationToken = default)
         => await _context.Roles
@@ -188,9 +182,6 @@ public sealed class TaskRepository : ITaskRepository
     public Task<ProjectTask?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => BaseQuery().FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
-    public Task<ProjectTask?> GetByIdForProjectAsync(Guid projectId, Guid taskId, CancellationToken cancellationToken = default)
-        => BaseQuery().FirstOrDefaultAsync(t => t.ProjectId == projectId && t.Id == taskId, cancellationToken);
-
     public async Task<IReadOnlyList<ProjectTask>> ListAsync(Guid projectId, TaskListQuery query, CancellationToken cancellationToken = default)
     {
         var filtered = ApplyFilters(_context.Tasks.AsNoTracking(), projectId, query);
@@ -210,22 +201,31 @@ public sealed class TaskRepository : ITaskRepository
         => ApplyFilters(_context.Tasks.AsNoTracking(), projectId, query).CountAsync(cancellationToken);
 
     public async Task<IReadOnlyList<(ProjectTaskStatus Status, int Count)>> CountByStatusAsync(Guid projectId, CancellationToken cancellationToken = default)
-        => await _context.Tasks
+    {
+        var groups = await _context.Tasks
             .AsNoTracking()
             .Where(t => t.ProjectId == projectId)
             .GroupBy(t => t.Status)
             .Select(g => new { g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken)
-            .ContinueWith(t => (IReadOnlyList<(ProjectTaskStatus, int)>)t.Result.Select(x => (x.Key, x.Count)).ToList(), cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        // Awaited rather than continued into: a continuation would hand the caller an
+        // AggregateException wrapping whatever the database threw, and the global handler maps
+        // exception types - it could no longer tell a connection failure from a defect.
+        return groups.Select(x => (x.Key, x.Count)).ToList();
+    }
 
     public async Task<IReadOnlyList<(ProjectTaskPriority Priority, int Count)>> CountByPriorityAsync(Guid projectId, CancellationToken cancellationToken = default)
-        => await _context.Tasks
+    {
+        var groups = await _context.Tasks
             .AsNoTracking()
             .Where(t => t.ProjectId == projectId)
             .GroupBy(t => t.Priority)
             .Select(g => new { g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken)
-            .ContinueWith(t => (IReadOnlyList<(ProjectTaskPriority, int)>)t.Result.Select(x => (x.Key, x.Count)).ToList(), cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        return groups.Select(x => (x.Key, x.Count)).ToList();
+    }
 
     public Task<int> CountCriticalAsync(Guid projectId, CancellationToken cancellationToken = default)
         => _context.Tasks.CountAsync(
