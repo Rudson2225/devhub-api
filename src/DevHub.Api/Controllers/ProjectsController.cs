@@ -29,7 +29,10 @@ public sealed class ProjectsController : ApiControllerBase
     {
         await ValidateAsync(request, cancellationToken);
         var response = await _projects.CreateAsync(GetCurrentUserId(), request, cancellationToken);
-        return CreatedAtAction(nameof(Create), new { id = response.Id }, response);
+
+        // Point at the Get route, not at this one: CreatedAtAction(nameof(Create)) produced
+        // "api/projects?id=...", which is the collection, not the project that was just created.
+        return CreatedAtAction(nameof(Get), new { projectId = response.Id }, response);
     }
 
     [HttpGet]

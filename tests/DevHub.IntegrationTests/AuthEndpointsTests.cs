@@ -1,5 +1,8 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using DevHub.Application.DTOs.Auth;
 using DevHub.Application.DTOs.Users;
 using FluentAssertions;
@@ -32,6 +35,45 @@ public sealed class AuthEndpointsTests : IClassFixture<DevHubApiFactory>
         var user = await me.Content.ReadFromJsonAsync<UserResponse>();
         user!.Email.Should().Be("auth-flow@test.com");
         user.DisplayName.Should().Be("auth-flow");
+    }
+
+    [Fact]
+    public async Task Login_with_a_body_larger_than_the_rate_limit_inspection_window_still_binds()
+    {
+        var auth = await _factory.RegisterAsync("oversized-login@test.com");
+
+        // The per-account rate limit key is derived from a bounded prefix of the body. The prefix is
+        // only ever read, so the rest of the payload still has to reach model binding: a payload
+        // beyond that window used to be answered with an unmapped 500 instead of a login.
+        var payload = JsonSerializer.Serialize(new
+        {
+            email = auth.User.Email,
+            password = "Str0ng!Pass123",
+            padding = new string('x', 20_000)
+        });
+
+        using var content = new StringContent(payload, Encoding.UTF8);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        var response = await _factory.HttpClient.PostAsync("/api/auth/login", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<AuthResponse>(DevHubApiFactory.ApiJsonOptions);
+        body!.User.Email.Should().Be(auth.User.Email);
+        body.RefreshToken.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Login_with_an_unreadable_body_does_not_surface_as_a_server_error()
+    {
+        using var content = new StringContent("not json at all", Encoding.UTF8);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        var response = await _factory.HttpClient.PostAsync("/api/auth/login", content);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.InternalServerError);
+        ((int)response.StatusCode).Should().BeOneOf(
+            (int)HttpStatusCode.BadRequest, (int)HttpStatusCode.Unauthorized);
     }
 
     [Fact]

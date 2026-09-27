@@ -29,6 +29,35 @@ public sealed class ProjectsEndpointsTests : IClassFixture<DevHubApiFactory>
     }
 
     [Fact]
+    public async Task Create_project_points_at_the_created_resource()
+    {
+        var auth = await _factory.RegisterAsync("project-location@test.com");
+
+        var request = _factory.Authenticated(
+            new HttpRequestMessage(HttpMethod.Post, "/api/projects")
+            {
+                Content = JsonContent.Create(new { name = "Locate me" })
+            },
+            auth.AccessToken);
+
+        var response = await _factory.HttpClient.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var created = await response.Content.ReadFromJsonAsync<ProjectResponse>(DevHubApiFactory.ApiJsonOptions);
+        var location = response.Headers.Location;
+        location.Should().NotBeNull("a 201 has to say where the new project lives");
+        location!.AbsolutePath.Should().Be($"/api/projects/{created!.Id}");
+
+        // And the URL it advertises has to actually serve the project, on a GET.
+        var followed = await _factory.HttpClient.SendAsync(
+            _factory.Authenticated(new HttpRequestMessage(HttpMethod.Get, location), auth.AccessToken));
+
+        followed.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await followed.Content.ReadFromJsonAsync<ProjectResponse>(DevHubApiFactory.ApiJsonOptions))!
+            .Id.Should().Be(created.Id);
+    }
+
+    [Fact]
     public async Task Archived_project_cannot_be_created()
     {
         var auth = await _factory.RegisterAsync("archived-proj@test.com");

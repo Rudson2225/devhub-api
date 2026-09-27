@@ -35,7 +35,19 @@ internal static class AuthRateLimitKeyProvider
             return null;
         }
 
-        var body = await ReadPrefixAsync(context.Request);
+        string body;
+        try
+        {
+            body = await ReadPrefixAsync(context.Request);
+        }
+        catch (IOException)
+        {
+            // The body could not be read at all, most often because the client went away mid-request.
+            // There is no account to derive a key from, and the per-address budget still applies, so
+            // the request is handed on instead of failing with an error it did not cause.
+            return null;
+        }
+
         if (string.IsNullOrWhiteSpace(body))
         {
             return null;
@@ -77,7 +89,12 @@ internal static class AuthRateLimitKeyProvider
 
     private static async ValueTask<string> ReadPrefixAsync(HttpRequest request)
     {
-        request.EnableBuffering(bufferThreshold: MaxInspectedBytes, bufferLimit: MaxInspectedBytes);
+        // Only the prefix is inspected, but the request body still has to reach model binding
+        // intact, so the wrapper must be able to carry the whole body: a limit equal to the
+        // inspection window made EnableBuffering throw "buffer limit exceeded" on any body larger
+        // than it, which turned a request over MaxInspectedBytes into an unmapped 500. The limit on
+        // how much is read here is the read loop below, not the buffering.
+        request.EnableBuffering(bufferThreshold: MaxInspectedBytes);
         var stream = request.Body;
         var originalPosition = stream.CanSeek ? stream.Position : 0;
 
@@ -102,6 +119,8 @@ internal static class AuthRateLimitKeyProvider
         {
             ArrayPool<byte>.Shared.Return(buffer);
 
+            // Rewound even when the read threw, otherwise model binding would see a body that
+            // starts in the middle and bind nothing at all.
             if (stream.CanSeek)
             {
                 stream.Position = originalPosition;
