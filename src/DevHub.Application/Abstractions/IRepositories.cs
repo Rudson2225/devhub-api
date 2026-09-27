@@ -24,8 +24,6 @@ public interface IRefreshTokenRepository
 
     Task AddAsync(RefreshToken token, CancellationToken cancellationToken = default);
 
-    void Update(RefreshToken token);
-
     Task RevokeAllForUserAsync(Guid userId, string revokeReason, CancellationToken cancellationToken = default);
 }
 
@@ -36,8 +34,6 @@ public interface IRoleRepository
     Task<Role?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Role>> ListWithPermissionsAsync(CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<Role>> ListAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IPermissionRepository
@@ -72,8 +68,6 @@ public interface IProjectMemberRepository
 public interface ITaskRepository
 {
     Task<ProjectTask?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-
-    Task<ProjectTask?> GetByIdForProjectAsync(Guid projectId, Guid taskId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectTask>> ListAsync(Guid projectId, TaskListQuery query, CancellationToken cancellationToken = default);
 

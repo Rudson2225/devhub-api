@@ -72,7 +72,7 @@ public sealed class AuthService : IAuthService
         var (refreshToken, plainRefreshToken) = await IssueRefreshTokenAsync(user.Id, ipAddress, familyId: null, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return BuildAuthResponse(user, refreshToken, plainRefreshToken);
+        return BuildAuthResponse(user, plainRefreshToken);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken cancellationToken = default)
@@ -88,7 +88,7 @@ public sealed class AuthService : IAuthService
         var (refreshToken, plainRefreshToken) = await IssueRefreshTokenAsync(user.Id, ipAddress, familyId: null, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return BuildAuthResponse(user, refreshToken, plainRefreshToken);
+        return BuildAuthResponse(user, plainRefreshToken);
     }
 
     public async Task<AuthResponse> RefreshAsync(RefreshTokenRequest request, string? ipAddress, CancellationToken cancellationToken = default)
@@ -145,7 +145,7 @@ public sealed class AuthService : IAuthService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return BuildAuthResponse(user, newToken, newPlainToken);
+        return BuildAuthResponse(user, newPlainToken);
     }
 
     public async Task LogoutAsync(Guid userId, LogoutRequest request, CancellationToken cancellationToken = default)
@@ -215,7 +215,7 @@ public sealed class AuthService : IAuthService
     private static UnauthorizedException InvalidRefreshToken()
         => new("Invalid refresh token.");
 
-    private AuthResponse BuildAuthResponse(User user, RefreshToken refreshToken, string plainRefreshToken)
+    private AuthResponse BuildAuthResponse(User user, string plainRefreshToken)
     {
         var lifetime = TimeSpan.FromMinutes(_jwtOptions.AccessTokenLifetimeMinutes);
         var accessToken = _accessTokenGenerator.Generate(user, lifetime);

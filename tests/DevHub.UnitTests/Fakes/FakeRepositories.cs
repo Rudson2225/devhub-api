@@ -50,10 +50,6 @@ public sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
         return Task.CompletedTask;
     }
 
-    public void Update(RefreshToken token)
-    {
-    }
-
     public Task RevokeAllForUserAsync(Guid userId, string revokeReason, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
@@ -78,9 +74,6 @@ public sealed class FakeRoleRepository : IRoleRepository
         => Task.FromResult(Roles.FirstOrDefault(r => r.Id == id));
 
     public Task<IReadOnlyList<Role>> ListWithPermissionsAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<Role>>(Roles.ToList());
-
-    public Task<IReadOnlyList<Role>> ListAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Role>>(Roles.ToList());
 }
 

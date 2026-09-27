@@ -7,9 +7,6 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSi
         var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling((double)totalItems / pageSize);
         return new PagedResult<T>(items, page, pageSize, totalItems, totalPages);
     }
-
-    public static PagedResult<T> Empty(int page, int pageSize)
-        => new(Array.Empty<T>(), page, pageSize, 0, 0);
 }
 
 public sealed record PaginationQuery(int Page, int PageSize)

@@ -13,9 +13,7 @@ public sealed class CurrentUserService : ICurrentUserService
         _httpContextAccessor = httpContextAccessor;
     }
 
-    public ClaimsPrincipal? Principal => _httpContextAccessor.HttpContext?.User;
-
-    public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
+    private ClaimsPrincipal? Principal => _httpContextAccessor.HttpContext?.User;
 
     public Guid? UserId
     {
@@ -25,8 +23,4 @@ public sealed class CurrentUserService : ICurrentUserService
             return Guid.TryParse(value, out var id) ? id : null;
         }
     }
-
-    public string? Email => Principal?.FindFirstValue(JwtRegisteredClaimNames.Email);
-
-    public string? DisplayName => Principal?.FindFirstValue("name");
 }

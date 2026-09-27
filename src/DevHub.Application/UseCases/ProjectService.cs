@@ -144,8 +144,7 @@ public sealed class ProjectService : IProjectService
         var project = await _projects.GetByIdAsync(projectId, cancellationToken)
             ?? throw new NotFoundException("Project not found.");
 
-        // Activity log is cascade-deleted together with the project.
-        var name = project.Name;
+        // Nothing else has to read the project: its activity log is cascade-deleted with it.
         _projects.Remove(project);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
