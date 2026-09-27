@@ -39,6 +39,9 @@ namespace DevHub.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // The RevokedByIp cleanup from Up is not undone: putting "refresh token reuse detected"
+            // back into a character varying(45) address column is what this migration exists to
+            // remove. RevokedAt still marks those rows as revoked either way.
             migrationBuilder.DropIndex(
                 name: "ix_refresh_tokens_user_revoked",
                 table: "refresh_tokens");

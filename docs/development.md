@@ -64,6 +64,11 @@ dotnet tool run dotnet-ef database update \
 > O startup da API exige `Jwt__SecretKey`; ao executar comandos do EF a partir desta máquina,
 > exporte um valor de desenvolvimento primeiro (ex.: `export Jwt__SecretKey="dev~key~32bytes~min"`).
 > O EF usa a mesma `ConnectionStrings__Default` da API — veja a seção do PostgreSQL para a porta.
+>
+> Sem `--configuration Release` o EF carrega a saída **Debug**, e com `--no-build` ele nem recompila:
+> as duas opções juntas podem validar contra um assembly antigo e dar um resultado falso (uma migração
+> recém-criada simplesmente "não existe" para o comando). Depois de mexer no modelo, confira com
+> `dotnet ef migrations list` o que o EF enxerga antes de confiar no resultado de qualquer outro comando.
 
 As migrações são aplicadas automaticamente no startup quando `Database__AutoMigrate=true`
 (Development via `appsettings.Development.json`, e nos testes de integração).
