@@ -319,20 +319,49 @@ public sealed class TaskService : ITaskService
         }
     }
 
+    /// <summary>
+    /// Rewrites the task's tag associations to exactly <paramref name="tagIds"/>.
+    /// <para>
+    /// A null list means the caller did not mention tags at all, so the current associations are left
+    /// untouched; an empty list means "remove every tag". The two are different requests, which is why
+    /// an update that only moves a task to another column must never silently drop its labels.
+    /// </para>
+    /// <para>
+    /// The change is applied as a diff rather than by deleting every row and inserting the desired set
+    /// again. Deleting through a bulk statement would bypass the change tracker, leaving the loaded
+    /// task still reporting tags the database no longer has, and re-inserting a tag that was just
+    /// removed would collide with the tracked association for the same composite key.
+    /// </para>
+    /// </summary>
     private async Task ApplyTagsAsync(ProjectTask task, IReadOnlyList<Guid>? tagIds, CancellationToken cancellationToken)
     {
-        await _tags.RemoveTaskTagsAsync(task.Id, cancellationToken);
-
-        if (tagIds is null or { Count: 0 })
+        if (tagIds is null)
         {
             return;
         }
 
-        foreach (var distinctTagId in tagIds.Distinct())
-        {
-            var tag = await _tags.GetByIdAsync(distinctTagId, cancellationToken)
-                ?? throw new NotFoundException($"Tag '{distinctTagId}' not found.");
+        var desired = tagIds.Distinct().ToArray();
 
+        // Every id is resolved before a single association is touched, so an unknown tag rejects the
+        // whole request instead of leaving the task with half of the new set applied.
+        var tags = new List<Tag>(desired.Length);
+        foreach (var tagId in desired)
+        {
+            tags.Add(await _tags.GetByIdAsync(tagId, cancellationToken)
+                ?? throw new NotFoundException($"Tag '{tagId}' not found."));
+        }
+
+        var current = task.Tags.ToList();
+        var desiredIds = desired.ToHashSet();
+
+        foreach (var detached in current.Where(taskTag => !desiredIds.Contains(taskTag.TagId)))
+        {
+            _tags.RemoveTaskTag(detached);
+        }
+
+        var currentIds = current.Select(taskTag => taskTag.TagId).ToHashSet();
+        foreach (var tag in tags.Where(candidate => !currentIds.Contains(candidate.Id)))
+        {
             var isAssociated = await _tags.IsAssociatedWithProjectAsync(task.ProjectId, tag.Id, cancellationToken);
             if (!isAssociated)
             {

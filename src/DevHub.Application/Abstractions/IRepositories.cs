@@ -138,7 +138,13 @@ public interface ITagRepository
 
     void RemoveProjectTag(ProjectTag projectTag);
 
-    Task RemoveTaskTagsAsync(Guid taskId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Detaches one tag from a task. The entity handed in is the tracked association itself, so the
+    /// removal goes through the change tracker and the task keeps a consistent in-memory view. A bulk
+    /// delete by task id would not: it would drop the rows behind the tracker's back and leave the
+    /// loaded task still reporting tags the database no longer has.
+    /// </summary>
+    void RemoveTaskTag(TaskTag taskTag);
 
     void Remove(Tag tag);
 }

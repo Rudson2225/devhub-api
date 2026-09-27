@@ -402,10 +402,8 @@ public sealed class TagRepository : ITagRepository
     public void RemoveProjectTag(ProjectTag projectTag)
         => _context.ProjectTags.Remove(projectTag);
 
-    public async Task RemoveTaskTagsAsync(Guid taskId, CancellationToken cancellationToken = default)
-        => await _context.TaskTags
-            .Where(tt => tt.TaskId == taskId)
-            .ExecuteDeleteAsync(cancellationToken);
+    public void RemoveTaskTag(TaskTag taskTag)
+        => _context.TaskTags.Remove(taskTag);
 
     public void Remove(Tag tag)
         => _context.Tags.Remove(tag);
